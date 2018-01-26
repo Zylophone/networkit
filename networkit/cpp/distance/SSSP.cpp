@@ -47,28 +47,55 @@ std::set<std::vector<node>> SSSP::getPaths(node t, bool forward) const {
 		return paths;
 	}
 
-	std::function<void (std::vector<node> suffix, node v) > trace = [&](std::vector<node> suffix, node v) {
-		// base case
-		suffix.push_back(v);
-		if (v == source) {
-			paths.insert(suffix);
-			return;
-		}
-		for (node u : previous[v]) {
-			trace(suffix, u);
-		}
-	};
+	std::vector<node> targetPredecessors = previous[t];
 
-	std::vector<node> emptyPath;
-	trace(emptyPath, t);
+	#pragma omp parallel for schedule(dynamic)
+	for (count i = 0; i < targetPredecessors.size(); ++i) {
+
+		std::stack<std::vector<node>> stack;
+		std::vector<std::vector<node>> currPaths;
+
+		node pred = targetPredecessors[i];
+		if (pred == source) {
+			currPaths.push_back({t, pred});
+		}
+		else {
+			stack.push({t, pred});
+		}
+
+		while (!stack.empty()) {
+
+			node topPathLastNode = stack.top().back();
+
+			if (topPathLastNode == source) {
+				currPaths.push_back(stack.top());
+				stack.pop();
+				continue;
+			}
+
+			std::vector<node> topPath = stack.top();
+			stack.pop();
+
+			std::vector<node> currPredecessors = previous[topPath.back()];
+
+			for (node currPredecessor : currPredecessors) {
+				std::vector<node> suffix(topPath);
+				suffix.push_back(currPredecessor);
+				stack.push(suffix);
+			}
+		}
+
+		#pragma omp critical
+		paths.insert(currPaths.begin(), currPaths.end());
+	}
 
 	if (forward) {
-		std::set<std::vector<node>> paths1;
+		std::set<std::vector<node>> reversedPaths;
 		for (std::vector<node> path : paths) {
 			std::reverse(std::begin(path), std::end(path));
-			paths1.insert(path);
+			reversedPaths.insert(path);
 		}
-		return paths1;
+		paths = reversedPaths;
 	}
 
 	return paths;
